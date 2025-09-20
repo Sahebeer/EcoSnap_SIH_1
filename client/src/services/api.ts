@@ -24,11 +24,31 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000, // Increased timeout
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Add retry logic for failed requests
+const retryRequest = async (error: any) => {
+  const config = error.config;
+  
+  if (!config || !config.retry) {
+    config.retry = 0;
+  }
+  
+  if (config.retry >= 3) {
+    return Promise.reject(error);
+  }
+  
+  config.retry += 1;
+  
+  // Wait before retrying
+  await new Promise(resolve => setTimeout(resolve, 1000 * config.retry));
+  
+  return api(config);
+};
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
@@ -49,7 +69,19 @@ api.interceptors.response.use(
   (response: AxiosResponse) => {
     return response;
   },
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
+    // Handle network errors with retry
+    if (!error.response && error.code === 'ECONNREFUSED') {
+      console.log('🔄 Network error, retrying...');
+      return retryRequest(error);
+    }
+    
+    // Handle server errors with retry
+    if (error.response?.status && error.response.status >= 500) {
+      console.log('🔄 Server error, retrying...');
+      return retryRequest(error);
+    }
+    
     if (error.response?.status === 401) {
       // Unauthorized - clear token and redirect to login
       localStorage.removeItem('token');
@@ -182,7 +214,7 @@ export const actionsAPI = {
     formData.append('type', data.type);
     formData.append('title', data.title);
     formData.append('description', data.description);
-    formData.append('points', data.points.toString());
+    formData.append('points', (data.points || 0).toString());
     
     if (data.location) formData.append('location', data.location);
     if (data.quantity) formData.append('quantity', data.quantity.toString());

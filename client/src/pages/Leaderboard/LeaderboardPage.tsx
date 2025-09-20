@@ -25,16 +25,38 @@ import {
   CalendarToday,
   Person,
 } from '@mui/icons-material';
+import { leaderboardAPI } from '../../services/api';
 
 const LeaderboardPage: React.FC = () => {
   const [scrollY, setScrollY] = useState(0);
   const [activeTab, setActiveTab] = useState(0);
+  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Fetch leaderboard data
+  useEffect(() => {
+    const fetchLeaderboardData = async () => {
+      try {
+        setLoading(true);
+        const data = await leaderboardAPI.getGlobalLeaderboard();
+        setLeaderboardData(data?.leaderboard || []);
+      } catch (error) {
+        console.error('Failed to fetch leaderboard data:', error);
+        // Keep mock data as fallback
+        setLeaderboardData(mockLeaderboard);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeaderboardData();
+  }, [activeTab]);
 
   // Mock data for demonstration
   const mockLeaderboard = [
@@ -327,7 +349,25 @@ const LeaderboardPage: React.FC = () => {
           </Typography>
           
           <Grid container spacing={3}>
-            {mockLeaderboard.map((user, index) => (
+            {loading ? (
+              <Grid size={{ xs: 12 }}>
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <LinearProgress sx={{ mb: 2 }} />
+                  <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                    Loading leaderboard...
+                  </Typography>
+                </Box>
+              </Grid>
+            ) : leaderboardData.length === 0 ? (
+              <Grid size={{ xs: 12 }}>
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                    No leaderboard data available yet. Be the first to make an impact!
+                  </Typography>
+                </Box>
+              </Grid>
+            ) : (
+              leaderboardData.map((user, index) => (
               <Grid size={{ xs: 12 }} key={user.id}>
                 <Card
                   sx={{
@@ -459,7 +499,8 @@ const LeaderboardPage: React.FC = () => {
                   </CardContent>
                 </Card>
               </Grid>
-            ))}
+            ))
+            )}
           </Grid>
 
           {/* Load More Button */}

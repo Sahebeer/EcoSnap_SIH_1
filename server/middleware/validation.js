@@ -146,6 +146,7 @@ const validateCreateAction = [
     .trim(),
   
   body('description')
+    .optional()
     .isLength({ min: 10, max: 500 })
     .withMessage('Description must be between 10 and 500 characters')
     .trim(),

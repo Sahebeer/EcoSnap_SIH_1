@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Typography,
   Box,
@@ -13,6 +14,10 @@ import {
   Avatar,
   LinearProgress,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Search,
@@ -27,9 +32,19 @@ import {
   Edit,
   Delete,
 } from '@mui/icons-material';
+import { actionsAPI } from '../../services/api';
+import { useNotification } from '../../context/NotificationContext';
 
 const ActionsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { showNotification } = useNotification();
   const [scrollY, setScrollY] = useState(0);
+  const [actions, setActions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [selectedAction, setSelectedAction] = useState<any>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
@@ -37,39 +52,44 @@ const ActionsPage: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Mock data for demonstration
-  const mockActions = [
-    {
-      id: 1,
-      title: 'Planted 5 Trees',
-      description: 'Planted native trees in the community park',
-      points: 150,
-      date: '2024-01-15',
-      location: 'Central Park',
-      status: 'verified',
-      image: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400',
-    },
-    {
-      id: 2,
-      title: 'Recycled Electronics',
-      description: 'Properly disposed of old electronics at recycling center',
-      points: 80,
-      date: '2024-01-14',
-      location: 'Recycling Center',
-      status: 'pending',
-      image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400',
-    },
-    {
-      id: 3,
-      title: 'Used Public Transport',
-      description: 'Took the bus instead of driving for a week',
-      points: 120,
-      date: '2024-01-13',
-      location: 'City Transit',
-      status: 'verified',
-      image: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=400',
-    },
-  ];
+  // Fetch actions from API
+  const fetchActions = async () => {
+    try {
+      setLoading(true);
+      const response = await actionsAPI.getUserActions({
+        type: filterType === 'all' ? undefined : filterType as any,
+        sortBy: 'date',
+        sortOrder: 'desc'
+      });
+      setActions(response.actions);
+    } catch (error: any) {
+      console.error('Error fetching actions:', error);
+      showNotification('Failed to load actions', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActions();
+  }, [filterType]);
+
+  // Listen for page focus to refresh actions when returning from create page
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchActions();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  // Filter actions based on search term
+  const filteredActions = actions.filter(action =>
+    action.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    action.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    action.location?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <Box
@@ -243,6 +263,8 @@ const ActionsPage: React.FC = () => {
                 <TextField
                   fullWidth
                   placeholder="Search actions..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
@@ -292,6 +314,7 @@ const ActionsPage: React.FC = () => {
                   fullWidth
                   variant="contained"
                   startIcon={<Add />}
+                  onClick={() => navigate('/actions/create')}
                   sx={{
                     background: 'linear-gradient(135deg, #ff6b6b, #ffa500)',
                     '&:hover': {
@@ -321,8 +344,22 @@ const ActionsPage: React.FC = () => {
             Recent Actions
           </Typography>
           
-          <Grid container spacing={3}>
-            {mockActions.map((action, index) => (
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <LinearProgress sx={{ width: '100%', maxWidth: 400 }} />
+            </Box>
+          ) : filteredActions.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
+                No actions found
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                {searchTerm ? 'Try adjusting your search terms' : 'Create your first eco action!'}
+              </Typography>
+            </Box>
+          ) : (
+            <Grid container spacing={3}>
+              {filteredActions.map((action, index) => (
               <Grid size={{ xs: 12, md: 6, lg: 4 }} key={action.id}>
                 <Card
                   sx={{
@@ -332,23 +369,51 @@ const ActionsPage: React.FC = () => {
                     borderRadius: 3,
                     overflow: 'hidden',
                     transition: 'all 0.3s ease',
+                    cursor: 'pointer',
                     '&:hover': {
                       transform: 'translateY(-8px)',
                       boxShadow: '0 25px 50px rgba(0, 0, 0, 0.3)',
                     },
                   }}
+                  onClick={() => {
+                    setSelectedAction(action);
+                    setDetailModalOpen(true);
+                  }}
                 >
                   <Box
                     sx={{
                       height: 200,
-                      background: `linear-gradient(135deg, rgba(255, 107, 107, 0.2), rgba(255, 165, 0, 0.2))`,
                       position: 'relative',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      overflow: 'hidden',
                     }}
                   >
-                    <Co2Outlined sx={{ fontSize: 60, color: 'rgba(255, 255, 255, 0.3)' }} />
+                    {action.proofImage ? (
+                      <img
+                        src={`http://localhost:5001${action.proofImage}`}
+                        alt={action.title}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                        onError={(e) => {
+                          console.error('Image failed to load:', action.proofImage);
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <Box
+                        sx={{
+                          height: '100%',
+                          background: `linear-gradient(135deg, rgba(255, 107, 107, 0.2), rgba(255, 165, 0, 0.2))`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Co2Outlined sx={{ fontSize: 60, color: 'rgba(255, 255, 255, 0.3)' }} />
+                      </Box>
+                    )}
                   </Box>
                   
                   <CardContent sx={{ p: 3 }}>
@@ -426,10 +491,116 @@ const ActionsPage: React.FC = () => {
                   </CardContent>
                 </Card>
               </Grid>
-            ))}
-          </Grid>
+              ))}
+            </Grid>
+          )}
         </Box>
       </Box>
+
+      {/* Action Detail Modal */}
+      <Dialog
+        open={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'rgba(255, 255, 255, 0.1)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: 3,
+          },
+        }}
+      >
+        {selectedAction && (
+          <>
+            <DialogTitle
+              sx={{
+                color: 'white',
+                fontWeight: 600,
+                background: 'linear-gradient(135deg, #00ff88, #00ccff)',
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              {selectedAction.title}
+            </DialogTitle>
+            <DialogContent>
+              {selectedAction.proofImage && (
+                <Box sx={{ mb: 3, textAlign: 'center' }}>
+                  <img
+                    src={`http://localhost:5001${selectedAction.proofImage}`}
+                    alt={selectedAction.title}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '400px',
+                      borderRadius: '8px',
+                      objectFit: 'cover',
+                    }}
+                    onError={(e) => {
+                      console.error('Image failed to load:', selectedAction.proofImage);
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </Box>
+              )}
+              
+              <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 2 }}>
+                {selectedAction.description}
+              </Typography>
+              
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <Chip
+                  label={selectedAction.status}
+                  sx={{
+                    background: selectedAction.status === 'verified' 
+                      ? 'linear-gradient(135deg, #4ecdc4, #44a08d)' 
+                      : 'linear-gradient(135deg, #ffa500, #ff8c00)',
+                    color: 'white',
+                    fontWeight: '600',
+                  }}
+                />
+                <Chip
+                  icon={<Star />}
+                  label={`${selectedAction.points} points`}
+                  sx={{
+                    background: 'linear-gradient(135deg, #ffa500, #ff8c00)',
+                    color: 'white',
+                    fontWeight: '600',
+                  }}
+                />
+              </Box>
+              
+              {selectedAction.location && (
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <LocationOn sx={{ fontSize: 20, color: 'rgba(255, 255, 255, 0.6)', mr: 1 }} />
+                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                    {selectedAction.location}
+                  </Typography>
+                </Box>
+              )}
+              
+              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                Created: {new Date(selectedAction.createdAt).toLocaleDateString()}
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button
+                onClick={() => setDetailModalOpen(false)}
+                sx={{
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  '&:hover': {
+                    background: 'rgba(255, 255, 255, 0.1)',
+                  },
+                }}
+              >
+                Close
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 };

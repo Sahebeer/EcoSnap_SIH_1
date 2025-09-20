@@ -30,8 +30,12 @@ import {
   Save,
   ArrowBack,
 } from '@mui/icons-material';
+import { UploadZone } from '../../components/Upload';
+import { actionsAPI } from '../../services/api';
+import { useNotification } from '../../context/NotificationContext';
 
 const CreateActionPage: React.FC = () => {
+  const { showNotification } = useNotification();
   const [scrollY, setScrollY] = useState(0);
   const [formData, setFormData] = useState({
     title: '',
@@ -39,9 +43,11 @@ const CreateActionPage: React.FC = () => {
     category: '',
     location: '',
     date: '',
-    points: '',
     image: null as File | null,
   });
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadError, setUploadError] = useState<string>('');
 
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
@@ -53,10 +59,93 @@ const CreateActionPage: React.FC = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleInputChange('image', file);
+  const handleImageUpload = async (file: File) => {
+    setUploadError('');
+    setUploadStatus('idle');
+    setUploadProgress(0);
+    handleInputChange('image', file);
+    
+    // For now, just set success status since the actual upload happens when creating the action
+    setUploadStatus('success');
+    setUploadProgress(100);
+  };
+
+  const handleImageRemove = () => {
+    setUploadError('');
+    setUploadStatus('idle');
+    setUploadProgress(0);
+    handleInputChange('image', null);
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.title || !formData.category) {
+      showNotification('Please fill in title and category', 'error');
+      return;
+    }
+
+    // Validate title length
+    if (formData.title.length < 3 || formData.title.length > 100) {
+      showNotification('Title must be between 3 and 100 characters', 'error');
+      return;
+    }
+
+    // Validate description length if provided
+    if (formData.description && (formData.description.length < 10 || formData.description.length > 500)) {
+      showNotification('Description must be between 10 and 500 characters', 'error');
+      return;
+    }
+
+    try {
+      setUploadStatus('uploading');
+      setUploadProgress(0);
+
+      const actionData = {
+        type: formData.category as any,
+        title: formData.title,
+        description: formData.description || `Eco action: ${formData.title}`,
+        points: 50, // Default points (backend will recalculate based on action type)
+        location: formData.location,
+        proofImage: formData.image || undefined,
+        tags: [],
+      };
+
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      console.log('Creating action with data:', actionData);
+      const result = await actionsAPI.createAction(actionData);
+      console.log('Action created successfully:', result);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      setUploadStatus('success');
+      
+      showNotification('Action created successfully!', 'success');
+      
+      // Reset form
+      setFormData({
+        title: '',
+        description: '',
+        category: '',
+        location: '',
+        date: '',
+        image: null,
+      });
+      setUploadStatus('idle');
+      setUploadProgress(0);
+      
+    } catch (error: any) {
+      setUploadStatus('error');
+      setUploadError(error.message || 'Failed to create action');
+      showNotification(error.message || 'Failed to create action', 'error');
     }
   };
 
@@ -226,8 +315,33 @@ const CreateActionPage: React.FC = () => {
                     <Select
                       value={formData.category}
                       onChange={(e) => handleInputChange('category', e.target.value)}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            background: 'rgba(0, 0, 0, 0.9)',
+                            backdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: 2,
+                            '& .MuiMenuItem-root': {
+                              color: 'white',
+                              '&:hover': {
+                                background: 'rgba(255, 255, 255, 0.1)',
+                              },
+                              '&.Mui-selected': {
+                                background: 'rgba(255, 107, 107, 0.2)',
+                                '&:hover': {
+                                  background: 'rgba(255, 107, 107, 0.3)',
+                                },
+                              },
+                            },
+                          },
+                        },
+                      }}
                       sx={{
                         color: 'white',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        backdropFilter: 'blur(10px)',
+                        borderRadius: 2,
                         '& .MuiOutlinedInput-notchedOutline': {
                           borderColor: 'rgba(255, 255, 255, 0.3)',
                         },
@@ -243,7 +357,7 @@ const CreateActionPage: React.FC = () => {
                       }}
                     >
                       {categories.map((category) => (
-                        <MenuItem key={category} value={category} sx={{ color: 'white' }}>
+                        <MenuItem key={category} value={category}>
                           {category}
                         </MenuItem>
                       ))}
@@ -251,44 +365,6 @@ const CreateActionPage: React.FC = () => {
                   </FormControl>
                 </Grid>
 
-                {/* Points */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="Estimated Points"
-                    type="number"
-                    value={formData.points}
-                    onChange={(e) => handleInputChange('points', e.target.value)}
-                    placeholder="e.g., 150"
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Co2Outlined sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: 'white',
-                        '& fieldset': {
-                          borderColor: 'rgba(255, 255, 255, 0.3)',
-                        },
-                        '&:hover fieldset': {
-                          borderColor: 'rgba(255, 255, 255, 0.5)',
-                        },
-                        '&.Mui-focused fieldset': {
-                          borderColor: '#ff6b6b',
-                        },
-                      },
-                      '& .MuiInputLabel-root': {
-                        color: 'rgba(255, 255, 255, 0.7)',
-                        '&.Mui-focused': {
-                          color: '#ff6b6b',
-                        },
-                      },
-                    }}
-                  />
-                </Grid>
 
                 {/* Location */}
                 <Grid size={{ xs: 12, md: 6 }}>
@@ -374,12 +450,12 @@ const CreateActionPage: React.FC = () => {
                 <Grid size={{ xs: 12 }}>
                   <TextField
                     fullWidth
-                    label="Description"
+                    label="Description (Optional)"
                     multiline
                     rows={4}
                     value={formData.description}
                     onChange={(e) => handleInputChange('description', e.target.value)}
-                    placeholder="Describe your eco-friendly action in detail..."
+                    placeholder="Describe your eco-friendly action in detail (optional)..."
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
@@ -416,62 +492,28 @@ const CreateActionPage: React.FC = () => {
 
                 {/* Image Upload */}
                 <Grid size={{ xs: 12 }}>
-                  <Card
-                    sx={{
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '2px dashed rgba(255, 255, 255, 0.3)',
-                      borderRadius: 3,
-                      p: 3,
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      color: 'rgba(255, 255, 255, 0.9)', 
+                      mb: 3,
+                      fontWeight: 600,
                       textAlign: 'center',
-                      cursor: 'pointer',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        borderColor: '#ff6b6b',
-                        background: 'rgba(255, 107, 107, 0.1)',
-                      },
                     }}
-                    onClick={() => document.getElementById('image-upload')?.click()}
                   >
-                    <input
-                      id="image-upload"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      style={{ display: 'none' }}
-                    />
-                    
-                    {formData.image ? (
-                      <Box>
-                        <Avatar
-                          src={URL.createObjectURL(formData.image)}
-                          sx={{ width: 100, height: 100, mx: 'auto', mb: 2 }}
-                        />
-                        <Typography sx={{ color: 'white', mb: 1 }}>
-                          {formData.image.name}
-                        </Typography>
-                        <Button
-                          startIcon={<Delete />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleInputChange('image', null);
-                          }}
-                          sx={{ color: '#ff6b6b' }}
-                        >
-                          Remove Image
-                        </Button>
-                      </Box>
-                    ) : (
-                      <Box>
-                        <CloudUpload sx={{ fontSize: 60, color: 'rgba(255, 255, 255, 0.5)', mb: 2 }} />
-                        <Typography sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 1 }}>
-                          Click to upload an image
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                          PNG, JPG up to 10MB
-                        </Typography>
-                      </Box>
-                    )}
-                  </Card>
+                    Upload Proof Image
+                  </Typography>
+                  <UploadZone
+                    onFileSelect={handleImageUpload}
+                    onFileRemove={handleImageRemove}
+                    selectedFile={formData.image}
+                    isUploading={uploadStatus === 'uploading'}
+                    uploadProgress={uploadProgress}
+                    uploadStatus={uploadStatus}
+                    error={uploadError}
+                    accept="image/*"
+                    maxSize={10}
+                  />
                 </Grid>
 
                 {/* Action Buttons */}
@@ -496,6 +538,8 @@ const CreateActionPage: React.FC = () => {
                     <Button
                       variant="contained"
                       startIcon={<Save />}
+                      onClick={handleSubmit}
+                      disabled={uploadStatus === 'uploading'}
                       sx={{
                         background: 'linear-gradient(135deg, #ff6b6b, #ffa500)',
                         px: 4,
@@ -504,9 +548,13 @@ const CreateActionPage: React.FC = () => {
                           background: 'linear-gradient(135deg, #ffa500, #ff6b6b)',
                           transform: 'translateY(-2px)',
                         },
+                        '&:disabled': {
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          color: 'rgba(255, 255, 255, 0.5)',
+                        },
                       }}
                     >
-                      Save Action
+                      {uploadStatus === 'uploading' ? 'Creating Action...' : 'Create Action'}
                     </Button>
                   </Box>
                 </Grid>

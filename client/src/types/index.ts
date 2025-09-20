@@ -219,7 +219,7 @@ export interface CreateActionForm {
   type: ActionType;
   title: string;
   description: string;
-  points: number;
+  points?: number;
   location?: string;
   tags: string[];
   quantity?: number;
